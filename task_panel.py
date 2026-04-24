@@ -6,7 +6,14 @@ from .detect import DetectionError, detect_footprints
 from .mesh_prep import prepare_selected_mesh
 from .ops import OperationError, execute, summarize_detections
 from .preview import clear_preview, update_preview
-from .settings import DetectionSettings, OperationSettings, Settings
+from .settings import (
+    DetectionSettings,
+    OperationSettings,
+    Settings,
+    load_default_settings,
+    restore_factory_defaults,
+    save_default_settings,
+)
 from .ui_utils import selected_document_object
 
 try:
@@ -25,6 +32,7 @@ class GridfinityMagnetFixTaskPanel:
         self.close_callback = close_callback
         self.form = self._build_form()
         self.form.setWindowTitle("Gridfinity Magnet Fix")
+        self._apply_settings(load_default_settings())
         self._wire_signals()
         if Gui is not None:
             Gui.Selection.addObserver(self)
@@ -57,10 +65,10 @@ class GridfinityMagnetFixTaskPanel:
             allow_mixed_profiles=self.allow_mixed_profiles.isChecked(),
         )
         operation = OperationSettings(
-            fill_height=self.fill_height.value(),
             hole_diameter=self.hole_diameter.value(),
             hole_depth=self.hole_depth.value(),
             hole_pitch=self.hole_pitch.value(),
+            subdividers_enabled=self.subdividers_enabled.isChecked(),
             chamfer_enabled=self.chamfer_enabled.isChecked(),
             chamfer_size=self.chamfer_size.value(),
             keep_intermediates_visible=self.keep_intermediates.isChecked(),
@@ -165,7 +173,8 @@ class GridfinityMagnetFixTaskPanel:
         group_layout = QtGui.QVBoxLayout(self.solid_group)
         self.solid_description = QtGui.QLabel(
             "Detect bottom landings on the selected solid's lowest Z plane, "
-            "fill the footprint, and cut OG-style magnet holes."
+            "rebuild the lower 5 mm from nominal Gridfinity cell geometry, "
+            "optionally add subdividers, and cut OG-style magnet holes."
         )
         self.solid_description.setWordWrap(True)
         group_layout.addWidget(self.solid_description)
@@ -177,7 +186,6 @@ class GridfinityMagnetFixTaskPanel:
         self.z_tolerance = self._double_spin(0.0, 1.0, 0.05, 3)
         self.axis_angle_tolerance = self._double_spin(0.0, 45.0, 6.0, 1)
         self.axis_ratio_min = self._double_spin(0.0, 1.0, 0.72, 2)
-        self.fill_height = self._double_spin(0.1, 20.0, 3.0, 2)
         self.hole_diameter = self._double_spin(0.1, 20.0, 6.15, 2)
         self.hole_depth = self._double_spin(0.1, 20.0, 2.2, 2)
         self.hole_pitch = self._double_spin(1.0, 50.0, 26.0, 2)
@@ -186,6 +194,7 @@ class GridfinityMagnetFixTaskPanel:
         self.allow_mixed_profiles = QtGui.QCheckBox()
         self.preview_enabled = QtGui.QCheckBox()
         self.preview_enabled.setChecked(True)
+        self.subdividers_enabled = QtGui.QCheckBox()
         self.chamfer_enabled = QtGui.QCheckBox()
         self.chamfer_enabled.setChecked(True)
         self.keep_intermediates = QtGui.QCheckBox()
@@ -195,14 +204,23 @@ class GridfinityMagnetFixTaskPanel:
         form.addRow("Axis angle tol (deg)", self.axis_angle_tolerance)
         form.addRow("Axis ratio minimum", self.axis_ratio_min)
         form.addRow("Allow mixed profiles", self.allow_mixed_profiles)
-        form.addRow("Fill height (mm)", self.fill_height)
         form.addRow("Hole diameter (mm)", self.hole_diameter)
         form.addRow("Hole depth (mm)", self.hole_depth)
         form.addRow("Hole pitch (mm)", self.hole_pitch)
+        form.addRow("Add subdividers", self.subdividers_enabled)
         form.addRow("Chamfer underside rim", self.chamfer_enabled)
         form.addRow("Chamfer size (mm)", self.chamfer_size)
         form.addRow("Preview detections", self.preview_enabled)
         form.addRow("Keep intermediates visible", self.keep_intermediates)
+
+        defaults_row = QtGui.QHBoxLayout()
+        self.update_defaults_button = QtGui.QPushButton("Update Defaults")
+        self.update_defaults_button.clicked.connect(self._update_defaults)
+        defaults_row.addWidget(self.update_defaults_button)
+        self.restore_defaults_button = QtGui.QPushButton("Restore Defaults")
+        self.restore_defaults_button.clicked.connect(self._restore_defaults)
+        defaults_row.addWidget(self.restore_defaults_button)
+        group_layout.addLayout(defaults_row)
 
         button_row = QtGui.QHBoxLayout()
         self.refresh_button = QtGui.QPushButton("Refresh Preview")
@@ -234,7 +252,6 @@ class GridfinityMagnetFixTaskPanel:
             self.z_tolerance,
             self.axis_angle_tolerance,
             self.axis_ratio_min,
-            self.fill_height,
             self.hole_diameter,
             self.hole_depth,
             self.hole_pitch,
@@ -245,7 +262,30 @@ class GridfinityMagnetFixTaskPanel:
 
         self.allow_mixed_profiles.toggled.connect(self.refresh_preview)
         self.preview_enabled.toggled.connect(self.refresh_preview)
+        self.subdividers_enabled.toggled.connect(self.refresh_preview)
         self.chamfer_enabled.toggled.connect(self.refresh_preview)
+
+    def _apply_settings(self, settings: Settings):
+        self.size_tolerance.setValue(settings.detection.size_tolerance)
+        self.z_tolerance.setValue(settings.detection.z_tolerance)
+        self.axis_angle_tolerance.setValue(settings.detection.axis_angle_tolerance_deg)
+        self.axis_ratio_min.setValue(settings.detection.axis_length_ratio_min)
+        self.allow_mixed_profiles.setChecked(settings.detection.allow_mixed_profiles)
+        self.hole_diameter.setValue(settings.operation.hole_diameter)
+        self.hole_depth.setValue(settings.operation.hole_depth)
+        self.hole_pitch.setValue(settings.operation.hole_pitch)
+        self.subdividers_enabled.setChecked(settings.operation.subdividers_enabled)
+        self.chamfer_enabled.setChecked(settings.operation.chamfer_enabled)
+        self.chamfer_size.setValue(settings.operation.chamfer_size)
+        self.keep_intermediates.setChecked(settings.operation.keep_intermediates_visible)
+
+    def _update_defaults(self):
+        save_default_settings(self.gather_settings())
+
+    def _restore_defaults(self):
+        settings = restore_factory_defaults()
+        self._apply_settings(settings)
+        self.refresh_preview()
 
     def addSelection(self, doc_name, object_name, sub_name, point):
         self._sync_selected_object()

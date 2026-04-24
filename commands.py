@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .mesh_prep import prepare_selected_mesh
 from .task_panel import GridfinityMagnetFixTaskPanel
-from .ui_utils import selected_document_object, workbench_icon_path
+from .ui_utils import is_compatible_document_object, selected_document_object, workbench_icon_path
 
 try:
     import FreeCAD as App
@@ -19,6 +19,7 @@ except ImportError:  # pragma: no cover - only available inside FreeCAD
 COMMAND_NAME = "Gridfinity_Magnet_Fix"
 MESH_PREP_COMMAND_NAME = "Gridfinity_Mesh_To_Refined_Solid"
 _ACTIVE_PANEL = None
+_PRESENTER = None
 
 
 class GridfinityMagnetFixCommand:
@@ -87,9 +88,53 @@ def show_context_panel():
     Gui.Control.showDialog(_ACTIVE_PANEL)
 
 
+def present_for_compatible_selection():
+    if Gui is None or Gui.ActiveDocument is None:  # pragma: no cover
+        return
+    source_object = selected_document_object()
+    if not is_compatible_document_object(source_object):
+        if _ACTIVE_PANEL is not None:
+            _ACTIVE_PANEL.source_object = source_object
+            _ACTIVE_PANEL.refresh_preview()
+        return
+    show_context_panel()
+
+
+def activate_context_presenter():
+    global _PRESENTER
+    if Gui is None:  # pragma: no cover
+        return
+    if _PRESENTER is None:
+        _PRESENTER = _WorkbenchSelectionPresenter()
+        Gui.Selection.addObserver(_PRESENTER)
+    present_for_compatible_selection()
+
+
+def deactivate_context_presenter():
+    global _PRESENTER
+    if Gui is None or _PRESENTER is None:  # pragma: no cover
+        return
+    Gui.Selection.removeObserver(_PRESENTER)
+    _PRESENTER = None
+
+
 def _clear_active_panel():
     global _ACTIVE_PANEL
     _ACTIVE_PANEL = None
+
+
+class _WorkbenchSelectionPresenter:
+    def addSelection(self, doc_name, object_name, sub_name, point):
+        present_for_compatible_selection()
+
+    def removeSelection(self, doc_name, object_name, sub_name):
+        present_for_compatible_selection()
+
+    def clearSelection(self, doc_name):
+        present_for_compatible_selection()
+
+    def setSelection(self, doc_name):
+        present_for_compatible_selection()
 
 
 def _show_warning(message: str):

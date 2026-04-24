@@ -32,3 +32,14 @@ def selected_document_object():
     if selection:
         return selection[0]
     return None
+
+
+def is_compatible_document_object(obj) -> bool:
+    if obj is None:
+        return False
+    shape = getattr(obj, "Shape", None)
+    if shape is not None and getattr(shape, "Solids", None):
+        return True
+    if hasattr(obj, "Mesh"):
+        return True
+    return False

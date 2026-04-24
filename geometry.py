@@ -8,7 +8,9 @@ import math
 from typing import Iterable, Sequence
 
 from .settings import (
+    HALF_GRID_INTERVAL,
     MAGNET_HOLE_PITCH,
+    NOMINAL_GRID_INTERVAL,
     NO_LOWER_CHAMFER_LONG,
     NO_LOWER_CHAMFER_SHORT,
     STANDARD_LANDING_LONG,
@@ -173,6 +175,137 @@ def hole_centers(
     if kind == FootprintKind.QUARTER:
         return (_rounded_point(cx, cy),)
     raise ValueError(f"Unsupported footprint kind: {kind}")
+
+
+def nominal_cell_bbox(
+    bbox: BBox2D,
+    kind: FootprintKind,
+    nominal_grid_interval: float = NOMINAL_GRID_INTERVAL,
+) -> BBox2D:
+    half_grid = nominal_grid_interval / 2.0
+    quarter_grid = half_grid / 2.0
+    cx = bbox.center_x
+    cy = bbox.center_y
+    if kind == FootprintKind.FULL:
+        return BBox2D(cx - half_grid, cy - half_grid, cx + half_grid, cy + half_grid)
+    if kind == FootprintKind.HALF_X:
+        return BBox2D(cx - half_grid, cy - quarter_grid, cx + half_grid, cy + quarter_grid)
+    if kind == FootprintKind.HALF_Y:
+        return BBox2D(cx - quarter_grid, cy - half_grid, cx + quarter_grid, cy + half_grid)
+    if kind == FootprintKind.QUARTER:
+        return BBox2D(cx - quarter_grid, cy - quarter_grid, cx + quarter_grid, cy + quarter_grid)
+    raise ValueError(f"Unsupported footprint kind: {kind}")
+
+
+def effective_hole_centers(
+    bbox: BBox2D,
+    kind: FootprintKind,
+    subdividers_enabled: bool = False,
+    hole_pitch: float = MAGNET_HOLE_PITCH,
+    nominal_grid_interval: float = NOMINAL_GRID_INTERVAL,
+) -> tuple[tuple[float, float], ...]:
+    if not subdividers_enabled:
+        return hole_centers(bbox, kind, hole_pitch)
+
+    half_small_grid = nominal_grid_interval / 4.0
+    cx = bbox.center_x
+    cy = bbox.center_y
+    if kind == FootprintKind.FULL:
+        return (
+            _rounded_point(cx - half_small_grid, cy - half_small_grid),
+            _rounded_point(cx + half_small_grid, cy - half_small_grid),
+            _rounded_point(cx - half_small_grid, cy + half_small_grid),
+            _rounded_point(cx + half_small_grid, cy + half_small_grid),
+        )
+    if kind == FootprintKind.HALF_X:
+        return (
+            _rounded_point(cx - half_small_grid, cy),
+            _rounded_point(cx + half_small_grid, cy),
+        )
+    if kind == FootprintKind.HALF_Y:
+        return (
+            _rounded_point(cx, cy - half_small_grid),
+            _rounded_point(cx, cy + half_small_grid),
+        )
+    if kind == FootprintKind.QUARTER:
+        return (_rounded_point(cx, cy),)
+    raise ValueError(f"Unsupported footprint kind: {kind}")
+
+
+def child_cell_bboxes(
+    bbox: BBox2D,
+    kind: FootprintKind,
+    subdividers_enabled: bool,
+    nominal_grid_interval: float = NOMINAL_GRID_INTERVAL,
+) -> tuple[BBox2D, ...]:
+    if not subdividers_enabled or kind == FootprintKind.QUARTER:
+        return (bbox,)
+
+    half_grid = nominal_grid_interval / 2.0
+    cx = bbox.center_x
+    cy = bbox.center_y
+    if kind == FootprintKind.FULL:
+        return (
+            BBox2D(bbox.min_x, bbox.min_y, cx, cy),
+            BBox2D(cx, bbox.min_y, bbox.max_x, cy),
+            BBox2D(bbox.min_x, cy, cx, bbox.max_y),
+            BBox2D(cx, cy, bbox.max_x, bbox.max_y),
+        )
+    if kind == FootprintKind.HALF_X:
+        return (
+            BBox2D(bbox.min_x, bbox.min_y, cx, bbox.max_y),
+            BBox2D(cx, bbox.min_y, bbox.max_x, bbox.max_y),
+        )
+    if kind == FootprintKind.HALF_Y:
+        return (
+            BBox2D(bbox.min_x, bbox.min_y, bbox.max_x, cy),
+            BBox2D(bbox.min_x, cy, bbox.max_x, bbox.max_y),
+        )
+    raise ValueError(f"Unsupported footprint kind: {kind}")
+
+
+def subdivider_segments(
+    bbox: BBox2D,
+    kind: FootprintKind,
+) -> tuple[tuple[float, float, float, float], ...]:
+    cx = bbox.center_x
+    cy = bbox.center_y
+    if kind == FootprintKind.FULL:
+        return (
+            (cx, bbox.min_y, cx, bbox.max_y),
+            (bbox.min_x, cy, bbox.max_x, cy),
+        )
+    if kind == FootprintKind.HALF_X:
+        return ((cx, bbox.min_y, cx, bbox.max_y),)
+    if kind == FootprintKind.HALF_Y:
+        return ((bbox.min_x, cy, bbox.max_x, cy),)
+    if kind == FootprintKind.QUARTER:
+        return ()
+    raise ValueError(f"Unsupported footprint kind: {kind}")
+
+
+def base_profile_half_width(z_height: float) -> float:
+    if z_height <= 0.0:
+        return 3.2
+    if z_height < 0.8:
+        return 3.2 - z_height
+    if z_height <= 2.6:
+        return 2.4
+    if z_height < 5.0:
+        return 2.4 - (z_height - 2.6)
+    return 0.0
+
+
+def base_profile_corner_radius(z_height: float) -> float:
+    if z_height <= 0.0:
+        return 0.8
+    if z_height < 0.8:
+        return 0.8 + z_height
+    if z_height <= 2.6:
+        return 1.6
+    if z_height < 5.0:
+        return 1.6 + ((z_height - 2.6) / 2.4) * 2.4
+    return 4.0
 
 
 def edge_axis_aligned_length(
