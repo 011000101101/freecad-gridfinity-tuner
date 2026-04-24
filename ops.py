@@ -63,8 +63,6 @@ class OperationResult:
     detections: list
 
 
-LOWER_CUT_EXTRA = 0.1
-LOWER_MERGE_EXTRA = 0.2
 TOP_FOOTPRINT_OUTER_INSET = 0.25
 
 
@@ -102,35 +100,37 @@ def execute(doc, source_object, settings: Settings) -> OperationResult:
     preprocessed_feature.Label = "Preprocessed Lower Rebuild Volume"
     container.addObject(preprocessed_feature)
 
-    channel_cell_shapes = _build_channel_cell_cutter_shapes(
+    grouped_cutter_shapes = _build_grouped_channel_cutter_shapes(
         preprocessed_feature.Shape,
         detections,
         settings,
     )
-    channel_cutter_shape = Part.makeCompound(channel_cell_shapes)
+    channel_cutter_shape = Part.makeCompound(grouped_cutter_shapes)
 
     channel_feature = doc.addObject("Part::Feature", _unique_name(doc, "GFChannelCutters"))
     channel_feature.Shape = channel_cutter_shape
     channel_feature.Label = "Profile Cutters"
     container.addObject(channel_feature)
 
-    channel_cells_feature = doc.addObject("Part::Feature", _unique_name(doc, "GFChannelCells"))
-    channel_cells_feature.Shape = channel_cutter_shape
-    channel_cells_feature.Label = "Channel Cutter Cells"
-    container.addObject(channel_cells_feature)
+    channel_cells_feature = None
+    if settings.operation.keep_intermediates_visible:
+        channel_cell_shapes = _build_channel_cell_cutter_shapes(
+            preprocessed_feature.Shape,
+            detections,
+            settings,
+        )
+        channel_cells_feature = doc.addObject("Part::Feature", _unique_name(doc, "GFChannelCells"))
+        channel_cells_feature.Shape = Part.makeCompound(channel_cell_shapes)
+        channel_cells_feature.Label = "Channel Cutter Cells"
+        container.addObject(channel_cells_feature)
 
     rebuild_feature = doc.addObject("Part::Feature", _unique_name(doc, "GFRebuiltLower"))
-    rebuild_feature.Shape = _rebuild_lower_section(preprocessed_feature.Shape, channel_cell_shapes)
+    rebuild_feature.Shape = _rebuild_lower_section(preprocessed_feature.Shape, grouped_cutter_shapes)
     rebuild_feature.Label = "Rebuilt Lower Section"
     container.addObject(rebuild_feature)
 
-    merge_rebuild_feature = doc.addObject("Part::Feature", _unique_name(doc, "GFMergeLower"))
-    merge_rebuild_feature.Shape = _prepare_rebuild_for_merge(source_cut.Shape, rebuild_feature.Shape)
-    merge_rebuild_feature.Label = "Merge-Ready Lower Section"
-    container.addObject(merge_rebuild_feature)
-
     repaired_feature = doc.addObject("Part::Feature", _unique_name(doc, "GFRepairedBase"))
-    repaired_feature.Shape = _merge_optional_base_with_rebuild(source_cut.Shape, merge_rebuild_feature.Shape)
+    repaired_feature.Shape = _merge_optional_base_with_rebuild(source_cut.Shape, rebuild_feature.Shape)
     repaired_feature.Label = "Repaired Base"
     container.addObject(repaired_feature)
 
@@ -172,13 +172,13 @@ def execute(doc, source_object, settings: Settings) -> OperationResult:
             source_cut,
             preprocessed_feature,
             channel_feature,
-            channel_cells_feature,
             rebuild_feature,
-            merge_rebuild_feature,
             repaired_feature,
             hole_feature,
             cut,
         ]
+        if channel_cells_feature is not None:
+            hidden_objects.append(channel_cells_feature)
         for obj in hidden_objects:
             if obj is final_object:
                 continue
@@ -209,7 +209,7 @@ def summarize_detections(detections) -> str:
     return "\n".join(lines)
 
 
-def _build_fill_pad_shape(detections, height: float = BASE_PROFILE_HEIGHT + LOWER_CUT_EXTRA):
+def _build_fill_pad_shape(detections, height: float = BASE_PROFILE_HEIGHT):
     pads = []
     for detection in detections:
         nominal_bbox = nominal_cell_bbox(detection.bbox, detection.match.kind)
@@ -274,6 +274,53 @@ def _build_channel_cell_cutter_shapes(preprocessed_shape, detections, settings: 
     if not cutter_solids:
         raise OperationError("Profile cutters produced an empty shape.")
     return cutter_solids
+
+
+def _build_grouped_channel_cutter_shapes(preprocessed_shape, detections, settings: Settings):
+    grouped_cutters = []
+    for detection in detections:
+        nominal_bbox = nominal_cell_bbox(detection.bbox, detection.match.kind)
+        raw_shape = _build_single_cell_raw_channel_volume(nominal_bbox, detection.plane_z)
+        child_bboxes = child_cell_bboxes(
+            nominal_bbox,
+            detection.match.kind,
+            settings.operation.subdividers_enabled,
+        )
+        keep_shapes = [
+            _build_base_island_solid(child_bbox, detection.plane_z)
+            for child_bbox in child_bboxes
+        ]
+        grouped_cutters.extend(
+            _build_detection_channel_cutters(preprocessed_shape, raw_shape, keep_shapes)
+        )
+    if not grouped_cutters:
+        raise OperationError("Profile cutters produced an empty shape.")
+    return grouped_cutters
+
+
+def _build_detection_channel_cutters(preprocessed_shape, raw_shape, keep_shapes, tolerance: float = 1e-6):
+    try:
+        channel_region = raw_shape.common(preprocessed_shape)
+    except ValueError as exc:
+        if "Null shape" in str(exc):
+            return []
+        raise
+    if _shape_is_empty(channel_region):
+        return []
+    if not keep_shapes:
+        return _shape_solids(channel_region)
+
+    try:
+        partitioned = SplitAPI.slice(channel_region, list(keep_shapes), "Split", tolerance)
+    except Exception as exc:
+        raise OperationError("Unable to build grouped channel cutter for a detected footprint.") from exc
+
+    cutter_pieces = []
+    for piece in _shape_solids(partitioned):
+        if _piece_overlaps_any_tool(piece, keep_shapes, tolerance):
+            continue
+        cutter_pieces.append(piece)
+    return cutter_pieces
 
 
 def _build_preprocessed_rebuild_volume(detections, settings: Settings):
@@ -425,7 +472,7 @@ def _build_preprocessed_plane_volume(child_bboxes, plane_z: float):
         inset=0.0,
         radius=0.0,
     )
-    adjusted_solid = adjusted_face.extrude(App.Vector(0.0, 0.0, BASE_PROFILE_HEIGHT + LOWER_MERGE_EXTRA))
+    adjusted_solid = adjusted_face.extrude(App.Vector(0.0, 0.0, BASE_PROFILE_HEIGHT))
     return _fillet_vertical_edges(adjusted_solid, BASE_PROFILE_TOP_RADIUS)
 
 
@@ -532,34 +579,6 @@ def _merge_optional_base_with_rebuild(base_shape, rebuild_shape):
     return merged
 
 
-def _prepare_rebuild_for_merge(base_shape, rebuild_shape):
-    if rebuild_shape is None or rebuild_shape.isNull():
-        raise OperationError("Rebuilt lower section produced a null shape.")
-    if _shape_is_empty(base_shape):
-        return rebuild_shape.copy()
-    try:
-        overlap = rebuild_shape.common(base_shape)
-    except ValueError as exc:
-        if "Null shape" not in str(exc):
-            raise
-        return rebuild_shape.copy()
-    if _shape_is_empty(overlap):
-        return rebuild_shape.copy()
-    try:
-        prepared = rebuild_shape.cut(overlap)
-    except ValueError as exc:
-        if "Null shape" not in str(exc):
-            raise
-        return rebuild_shape.copy()
-    if _shape_is_empty(prepared):
-        raise OperationError("Merge-ready lower section became empty after overlap removal.")
-    try:
-        prepared = prepared.removeSplitter()
-    except Exception:
-        pass
-    return prepared
-
-
 def _shape_is_empty(shape) -> bool:
     if shape is None:
         return True
@@ -603,7 +622,8 @@ def _rebuild_lower_section(base_shape, tool_shapes, tolerance: float = 1e-6):
     if _shape_is_empty(base_shape):
         raise OperationError("Preprocessed lower rebuild volume is empty.")
     if not tool_shapes:
-        return _heal_shape(base_shape.copy())
+        rebuilt = base_shape.copy()
+        return rebuilt if rebuilt.isValid() else _heal_shape(rebuilt)
 
     try:
         partitioned = SplitAPI.slice(base_shape, list(tool_shapes), "Split", tolerance)
@@ -633,6 +653,10 @@ def _piece_is_channel_volume(piece, tool_shapes, tolerance: float) -> bool:
     piece_volume = getattr(piece, "Volume", 0.0)
     if piece_volume <= tolerance:
         return True
+    return _piece_overlaps_any_tool(piece, tool_shapes, tolerance)
+
+
+def _piece_overlaps_any_tool(piece, tool_shapes, tolerance: float) -> bool:
     for tool_shape in tool_shapes:
         if _shape_is_empty(tool_shape):
             continue

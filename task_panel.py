@@ -100,7 +100,7 @@ class GridfinityMagnetFixTaskPanel:
             self.summary.setPlainText(
                 "Selected object is a mesh.\n"
                 "Available category: Mesh Preparation.\n"
-                "Run Shape from mesh -> Convert to solid -> Refine shape.\n"
+                "Run Shape from mesh -> Convert to solid -> Refine shape with hole stitching enabled.\n"
                 "The panel will remain open and switch to repair mode on the resulting solid."
             )
             return
@@ -156,7 +156,8 @@ class GridfinityMagnetFixTaskPanel:
         mesh_layout = QtGui.QVBoxLayout(self.mesh_group)
         self.mesh_description = QtGui.QLabel(
             "Prepare the selected mesh using the native Part workflow:\n"
-            "Shape from mesh -> Convert to solid -> Refine shape."
+            "Shape from mesh -> Convert to solid -> Refine shape.\n"
+            "Mesh conversion uses Stitch holes by default with 0.1 mm tolerance."
         )
         self.mesh_description.setWordWrap(True)
         mesh_layout.addWidget(self.mesh_description)
@@ -354,6 +355,26 @@ class GridfinityMagnetFixTaskPanel:
         except (DetectionError, OperationError) as exc:
             QtGui.QMessageBox.warning(self.form, "Gridfinity Magnet Fix", str(exc))
             return
+        analyze_message = self._geometry_analysis_message(result.final_object)
+        if analyze_message is not None:
+            if Gui is not None:
+                Gui.Selection.removeObserver(self)
+            clear_preview(self.doc)
+            if self.close_callback is not None:
+                self.close_callback()
+            if Gui is not None:
+                Gui.Control.closeDialog()
+            self._open_geometry_check(result.final_object)
+            QtGui.QMessageBox.warning(
+                None,
+                "Gridfinity Magnet Fix",
+                "Boolean result failed geometry validation.\n\n"
+                f"{analyze_message}\n\n"
+                "The geometry check task is now open for inspection.",
+            )
+            if hasattr(result.final_object, "ViewObject"):
+                result.final_object.ViewObject.Visibility = True
+            return
         if Gui is not None:
             Gui.Selection.removeObserver(self)
         clear_preview(self.doc)
@@ -362,3 +383,40 @@ class GridfinityMagnetFixTaskPanel:
         Gui.Control.closeDialog()
         if hasattr(result.final_object, "ViewObject"):
             result.final_object.ViewObject.Visibility = True
+
+    def _geometry_analysis_message(self, document_object):
+        shape = getattr(document_object, "Shape", None)
+        if shape is None:
+            return "Result object does not expose a Part shape."
+        try:
+            if shape.isValid():
+                if hasattr(shape, "check"):
+                    try:
+                        result = shape.check()
+                    except Exception as exc:
+                        return str(exc).strip() or type(exc).__name__
+                    if result not in (None, ""):
+                        return str(result)
+                return None
+        except Exception as exc:
+            return str(exc).strip() or type(exc).__name__
+
+        if hasattr(shape, "check"):
+            try:
+                result = shape.check()
+                if result not in (None, ""):
+                    return str(result)
+            except Exception as exc:
+                return str(exc).strip() or type(exc).__name__
+        return "Result shape is invalid."
+
+    def _open_geometry_check(self, document_object):
+        if Gui is None or document_object is None:
+            return
+        try:
+            Gui.Selection.clearSelection()
+            Gui.Selection.addSelection(document_object)
+            Gui.activateWorkbench("PartDesignWorkbench")
+            Gui.runCommand("Part_CheckGeometry", 0)
+        except Exception:
+            return

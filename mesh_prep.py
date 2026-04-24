@@ -14,6 +14,9 @@ except ImportError:  # pragma: no cover - only available inside FreeCAD
 from .ui_utils import selected_document_object
 
 
+MESH_STITCH_TOLERANCE_MM = 0.1
+
+
 def prepare_selected_mesh(source_object=None):
     if App is None or Part is None or Gui is None:  # pragma: no cover
         raise RuntimeError("FreeCAD Part API is not available in this environment.")
@@ -33,10 +36,10 @@ def prepare_selected_mesh(source_object=None):
     # Refine shape. This follows the documented user steps directly.
     # https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/FreeCAD_and_Mesh_Import.md
     try:
-        shape.makeShapeFromMesh(mesh.Topology, 0.0, False)
+        shape.makeShapeFromMesh(mesh.Topology, MESH_STITCH_TOLERANCE_MM, True)
     except TypeError:
         try:
-            shape.makeShapeFromMesh(mesh.Topology, 0.0)
+            shape.makeShapeFromMesh(mesh.Topology, MESH_STITCH_TOLERANCE_MM)
         except TypeError:
             shape.makeShapeFromMesh(mesh.Topology)
 
