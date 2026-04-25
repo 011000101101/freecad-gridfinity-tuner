@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from .detect import DetectionError, detect_footprints
+from .export_ops import ExportError, export_result
 from .mesh_prep import prepare_selected_mesh
 from .ops import OperationError, execute, summarize_detections
 from .preview import clear_preview, update_preview
 from .settings import (
     DetectionSettings,
     OperationSettings,
+    OUTPUT_MODE_ASSEMBLE,
+    OUTPUT_MODE_MERGE,
     Settings,
     load_default_settings,
     restore_factory_defaults,
@@ -30,6 +33,8 @@ class GridfinityMagnetFixTaskPanel:
         self.doc = doc
         self.source_object = source_object
         self.close_callback = close_callback
+        self.last_result = None
+        self._result_source_name = None
         self.form = self._build_form()
         self.form.setWindowTitle("Gridfinity Magnet Fix")
         self._apply_settings(load_default_settings())
@@ -65,6 +70,7 @@ class GridfinityMagnetFixTaskPanel:
             allow_mixed_profiles=self.allow_mixed_profiles.isChecked(),
         )
         operation = OperationSettings(
+            output_mode=self.output_mode.currentData(),
             hole_diameter=self.hole_diameter.value(),
             hole_depth=self.hole_depth.value(),
             hole_pitch=self.hole_pitch.value(),
@@ -87,6 +93,7 @@ class GridfinityMagnetFixTaskPanel:
                 "Select one mesh object to prepare it into a refined solid, or select one solid "
                 "or any face/edge/vertex belonging to a solid to repair it."
             )
+            self._update_export_buttons()
             return
         self.object_name.setText(self.source_object.Label)
         mode = self._current_mode()
@@ -103,6 +110,7 @@ class GridfinityMagnetFixTaskPanel:
                 "Run Shape from mesh -> Convert to solid -> Refine shape with hole stitching enabled.\n"
                 "The panel will remain open and switch to repair mode on the resulting solid."
             )
+            self._update_export_buttons()
             return
         if mode != "solid":
             clear_preview(self.doc)
@@ -112,6 +120,7 @@ class GridfinityMagnetFixTaskPanel:
             self.summary.setPlainText(
                 "Selected object is neither a mesh nor a solid shape supported by this tool."
             )
+            self._update_export_buttons()
             return
         self.selection_hint.setText(
             "Solid selected. The available task is to repair Gridfinity magnet holes."
@@ -131,6 +140,7 @@ class GridfinityMagnetFixTaskPanel:
             update_preview(self.doc, detections, settings)
         else:
             clear_preview(self.doc)
+        self._update_export_buttons()
 
     def _build_form(self):
         widget = QtGui.QWidget()
@@ -199,7 +209,11 @@ class GridfinityMagnetFixTaskPanel:
         self.chamfer_enabled = QtGui.QCheckBox()
         self.chamfer_enabled.setChecked(True)
         self.keep_intermediates = QtGui.QCheckBox()
+        self.output_mode = QtGui.QComboBox()
+        self.output_mode.addItem("Repair and Merge", OUTPUT_MODE_MERGE)
+        self.output_mode.addItem("Repair and Assemble", OUTPUT_MODE_ASSEMBLE)
 
+        form.addRow("Output mode", self.output_mode)
         form.addRow("Size tolerance (mm)", self.size_tolerance)
         form.addRow("Z tolerance (mm)", self.z_tolerance)
         form.addRow("Axis angle tol (deg)", self.axis_angle_tolerance)
@@ -231,6 +245,15 @@ class GridfinityMagnetFixTaskPanel:
         self.repair_button.clicked.connect(self._run_repair)
         button_row.addWidget(self.repair_button)
         group_layout.addLayout(button_row)
+
+        export_row = QtGui.QHBoxLayout()
+        self.export_stl_button = QtGui.QPushButton("Export STL")
+        self.export_stl_button.clicked.connect(self._export_merge_result)
+        export_row.addWidget(self.export_stl_button)
+        self.export_3mf_button = QtGui.QPushButton("Export 3MF")
+        self.export_3mf_button.clicked.connect(self._export_assembly_result)
+        export_row.addWidget(self.export_3mf_button)
+        group_layout.addLayout(export_row)
         solid_layout.addWidget(self.solid_group)
         layout.addWidget(self.solid_controls)
 
@@ -265,6 +288,7 @@ class GridfinityMagnetFixTaskPanel:
         self.preview_enabled.toggled.connect(self.refresh_preview)
         self.subdividers_enabled.toggled.connect(self.refresh_preview)
         self.chamfer_enabled.toggled.connect(self.refresh_preview)
+        self.output_mode.currentIndexChanged.connect(self.refresh_preview)
 
     def _apply_settings(self, settings: Settings):
         self.size_tolerance.setValue(settings.detection.size_tolerance)
@@ -272,6 +296,7 @@ class GridfinityMagnetFixTaskPanel:
         self.axis_angle_tolerance.setValue(settings.detection.axis_angle_tolerance_deg)
         self.axis_ratio_min.setValue(settings.detection.axis_length_ratio_min)
         self.allow_mixed_profiles.setChecked(settings.detection.allow_mixed_profiles)
+        self._set_output_mode(settings.operation.output_mode)
         self.hole_diameter.setValue(settings.operation.hole_diameter)
         self.hole_depth.setValue(settings.operation.hole_depth)
         self.hole_pitch.setValue(settings.operation.hole_pitch)
@@ -279,6 +304,7 @@ class GridfinityMagnetFixTaskPanel:
         self.chamfer_enabled.setChecked(settings.operation.chamfer_enabled)
         self.chamfer_size.setValue(settings.operation.chamfer_size)
         self.keep_intermediates.setChecked(settings.operation.keep_intermediates_visible)
+        self._update_export_buttons()
 
     def _update_defaults(self):
         save_default_settings(self.gather_settings())
@@ -307,6 +333,8 @@ class GridfinityMagnetFixTaskPanel:
     def _sync_selected_object(self):
         selected_object = selected_document_object()
         if selected_object is not None:
+            if getattr(selected_object, "Name", None) != self._result_source_name:
+                self._clear_result_state()
             self.source_object = selected_object
 
     def _current_mode(self):
@@ -326,6 +354,7 @@ class GridfinityMagnetFixTaskPanel:
         self.mesh_group.setVisible(visible)
 
     def _run_mesh_prep(self):
+        self._clear_result_state()
         self._sync_selected_object()
         if self._current_mode() != "mesh":
             QtGui.QMessageBox.warning(
@@ -342,6 +371,7 @@ class GridfinityMagnetFixTaskPanel:
         self.refresh_preview()
 
     def _run_repair(self):
+        self._clear_result_state()
         self._sync_selected_object()
         if self._current_mode() != "solid":
             QtGui.QMessageBox.warning(
@@ -355,7 +385,7 @@ class GridfinityMagnetFixTaskPanel:
         except (DetectionError, OperationError) as exc:
             QtGui.QMessageBox.warning(self.form, "Gridfinity Magnet Fix", str(exc))
             return
-        analyze_message = self._geometry_analysis_message(result.final_object)
+        invalid_object, analyze_message = self._operation_analysis_message(result)
         if analyze_message is not None:
             if Gui is not None:
                 Gui.Selection.removeObserver(self)
@@ -364,7 +394,7 @@ class GridfinityMagnetFixTaskPanel:
                 self.close_callback()
             if Gui is not None:
                 Gui.Control.closeDialog()
-            self._open_geometry_check(result.final_object)
+            self._open_geometry_check(invalid_object)
             QtGui.QMessageBox.warning(
                 None,
                 "Gridfinity Magnet Fix",
@@ -372,17 +402,28 @@ class GridfinityMagnetFixTaskPanel:
                 f"{analyze_message}\n\n"
                 "The geometry check task is now open for inspection.",
             )
-            if hasattr(result.final_object, "ViewObject"):
-                result.final_object.ViewObject.Visibility = True
+            if hasattr(invalid_object, "ViewObject"):
+                invalid_object.ViewObject.Visibility = True
             return
-        if Gui is not None:
-            Gui.Selection.removeObserver(self)
         clear_preview(self.doc)
-        if self.close_callback is not None:
-            self.close_callback()
-        Gui.Control.closeDialog()
+        self.last_result = result
+        self._result_source_name = getattr(self.source_object, "Name", None)
+        self.summary.setPlainText(self._result_summary(result))
+        self._update_export_buttons()
+        for document_object in result.deliverable_objects:
+            if hasattr(document_object, "ViewObject"):
+                document_object.ViewObject.Visibility = True
         if hasattr(result.final_object, "ViewObject"):
             result.final_object.ViewObject.Visibility = True
+
+    def _operation_analysis_message(self, result):
+        validation_objects = getattr(result, "validation_objects", ()) or ()
+        for document_object in validation_objects:
+            message = self._geometry_analysis_message(document_object)
+            if message is not None:
+                label = getattr(document_object, "Label", getattr(document_object, "Name", "Result"))
+                return document_object, f"{label}: {message}"
+        return None, None
 
     def _geometry_analysis_message(self, document_object):
         shape = getattr(document_object, "Shape", None)
@@ -409,6 +450,75 @@ class GridfinityMagnetFixTaskPanel:
             except Exception as exc:
                 return str(exc).strip() or type(exc).__name__
         return "Result shape is invalid."
+
+    def _result_summary(self, result):
+        if result.mode == OUTPUT_MODE_ASSEMBLE:
+            lines = [
+                "Created assembly result with two deliverable parts:",
+                f"- {result.upper_component.Label}",
+                f"- {result.base_component.Label}",
+                "",
+                "Use Export 3MF to write the two-part assembly for slicers.",
+            ]
+            return "\n".join(lines)
+        return (
+            f"Created merged result: {result.final_object.Label}\n\n"
+            "Use Export STL to write the merged repaired body."
+        )
+
+    def _clear_result_state(self):
+        self.last_result = None
+        self._result_source_name = None
+        self._update_export_buttons()
+
+    def _set_output_mode(self, mode):
+        index = self.output_mode.findData(mode)
+        if index >= 0:
+            self.output_mode.setCurrentIndex(index)
+
+    def _update_export_buttons(self):
+        mode = self.output_mode.currentData() if hasattr(self, "output_mode") else OUTPUT_MODE_MERGE
+        can_export = self.last_result is not None and getattr(self.last_result, "mode", None) == mode
+        self.export_stl_button.setVisible(mode == OUTPUT_MODE_MERGE)
+        self.export_3mf_button.setVisible(mode == OUTPUT_MODE_ASSEMBLE)
+        self.export_stl_button.setEnabled(can_export and mode == OUTPUT_MODE_MERGE)
+        self.export_3mf_button.setEnabled(can_export and mode == OUTPUT_MODE_ASSEMBLE)
+
+    def _export_merge_result(self):
+        self._export_with_dialog(".stl", "STL Mesh (*.stl)")
+
+    def _export_assembly_result(self):
+        self._export_with_dialog(".3mf", "3D Manufacturing Format (*.3mf)")
+
+    def _export_with_dialog(self, suffix, filter_text):
+        if self.last_result is None:
+            return
+        default_stem = self._export_stem()
+        path, _ = QtGui.QFileDialog.getSaveFileName(
+            self.form,
+            "Export Gridfinity Magnet Fix Result",
+            default_stem + suffix,
+            filter_text,
+        )
+        if not path:
+            return
+        if not path.lower().endswith(suffix):
+            path += suffix
+        try:
+            export_result(self.last_result, path)
+        except ExportError as exc:
+            QtGui.QMessageBox.warning(self.form, "Gridfinity Magnet Fix", str(exc))
+            return
+        QtGui.QMessageBox.information(
+            self.form,
+            "Gridfinity Magnet Fix",
+            f"Exported result to:\n{path}",
+        )
+
+    def _export_stem(self):
+        label = getattr(self.source_object, "Label", "gridfinity_magnet_fix")
+        safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in label).strip("_")
+        return safe or "gridfinity_magnet_fix"
 
     def _open_geometry_check(self, document_object):
         if Gui is None or document_object is None:

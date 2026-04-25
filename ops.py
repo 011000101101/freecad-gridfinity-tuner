@@ -20,6 +20,8 @@ from .settings import (
     BASE_PROFILE_UPPER_SLOPE,
     BASE_PROFILE_VERTICAL,
     BASE_PROFILE_WALL_RADIUS,
+    OUTPUT_MODE_ASSEMBLE,
+    OUTPUT_MODE_MERGE,
     Settings,
 )
 
@@ -61,6 +63,11 @@ class OperationResult:
     container: object
     final_object: object
     detections: list
+    mode: str
+    upper_component: object | None = None
+    base_component: object | None = None
+    deliverable_objects: tuple[object, ...] = ()
+    validation_objects: tuple[object, ...] = ()
 
 
 TOP_FOOTPRINT_OUTER_INSET = 0.25
@@ -74,10 +81,19 @@ def execute(doc, source_object, settings: Settings) -> OperationResult:
     if source_object is None or not hasattr(source_object, "Shape"):
         raise OperationError("Select a source object with a valid solid shape.")
 
+    output_mode = settings.operation.output_mode
+    if output_mode not in {OUTPUT_MODE_MERGE, OUTPUT_MODE_ASSEMBLE}:
+        output_mode = OUTPUT_MODE_MERGE
+
     detections = detect_footprints(source_object.Shape, settings.detection)
     _validate_operation(detections, settings)
     container = doc.addObject("App::Part", _unique_name(doc, "GridfinityMagnetFix"))
     container.Label = settings.operation.result_label
+    assembly_container = None
+    if output_mode == OUTPUT_MODE_ASSEMBLE:
+        assembly_container = doc.addObject("App::Part", _unique_name(doc, "GFAssembly"))
+        assembly_container.Label = "Assembly Result"
+        container.addObject(assembly_container)
 
     source_copy = doc.addObject("Part::Feature", _unique_name(doc, "GFSource"))
     source_copy.Shape = source_object.Shape.copy()
@@ -91,9 +107,12 @@ def execute(doc, source_object, settings: Settings) -> OperationResult:
     container.addObject(fill_feature)
 
     source_cut = doc.addObject("Part::Feature", _unique_name(doc, "GFSourceCut"))
-    source_cut.Shape = source_object.Shape.copy().cut(fill_feature.Shape)
-    source_cut.Label = "Source Without Lower Section"
-    container.addObject(source_cut)
+    source_cut_shape = source_object.Shape.copy().cut(fill_feature.Shape)
+    if output_mode == OUTPUT_MODE_ASSEMBLE:
+        source_cut_shape = _refine_optional_shape(source_cut_shape)
+    source_cut.Shape = source_cut_shape
+    source_cut.Label = "Prepared Upper Body"
+    (assembly_container or container).addObject(source_cut)
 
     preprocessed_feature = doc.addObject("Part::Feature", _unique_name(doc, "GFPreprocessedLower"))
     preprocessed_feature.Shape = _build_preprocessed_rebuild_volume(detections, settings)
@@ -129,27 +148,20 @@ def execute(doc, source_object, settings: Settings) -> OperationResult:
     rebuild_feature.Label = "Rebuilt Lower Section"
     container.addObject(rebuild_feature)
 
-    repaired_feature = doc.addObject("Part::Feature", _unique_name(doc, "GFRepairedBase"))
-    repaired_feature.Shape = _merge_optional_base_with_rebuild(source_cut.Shape, rebuild_feature.Shape)
-    repaired_feature.Label = "Repaired Base"
-    container.addObject(repaired_feature)
-
     hole_feature = doc.addObject("Part::Feature", _unique_name(doc, "GFHoleCutters"))
     hole_feature.Shape = _build_hole_cutter_shape(detections, settings)
     hole_feature.Label = "Hole Cutters"
     container.addObject(hole_feature)
 
-    cut = doc.addObject("Part::Feature", _unique_name(doc, "GFHoleCut"))
-    cut.Shape = repaired_feature.Shape.cut(hole_feature.Shape)
-    cut.Label = "Magnet Pockets"
-    container.addObject(cut)
+    base_cut = doc.addObject("Part::Feature", _unique_name(doc, "GFBaseComponent"))
+    base_cut.Shape = rebuild_feature.Shape.cut(hole_feature.Shape)
+    base_cut.Label = "Repaired Base Component"
+    (assembly_container or container).addObject(base_cut)
 
-    doc.recompute()
-
-    final_object = cut
+    base_component = base_cut
     if settings.operation.chamfer_enabled:
         edge_list = _collect_chamfer_edges(
-            cut.Shape,
+            base_cut.Shape,
             detections,
             settings.operation.subdividers_enabled,
             settings.operation.hole_diameter / 2.0,
@@ -157,26 +169,43 @@ def execute(doc, source_object, settings: Settings) -> OperationResult:
             settings.operation.chamfer_size,
         )
         if edge_list:
-            chamfer = doc.addObject("Part::Chamfer", _unique_name(doc, "GFChamfer"))
-            chamfer.Base = cut
+            chamfer = doc.addObject("Part::Chamfer", _unique_name(doc, "GFBaseChamfer"))
+            chamfer.Base = base_cut
             chamfer.Edges = edge_list
-            chamfer.Label = "Magnet Hole Chamfer"
-            container.addObject(chamfer)
-            final_object = chamfer
-            doc.recompute()
+            chamfer.Label = "Repaired Base Component"
+            (assembly_container or container).addObject(chamfer)
+            base_component = chamfer
+
+    doc.recompute()
+
+    if output_mode == OUTPUT_MODE_ASSEMBLE:
+        final_object = assembly_container
+        deliverable_objects = (source_cut, base_component)
+    else:
+        merged_result = doc.addObject("Part::Feature", _unique_name(doc, "GFMergedResult"))
+        merged_result.Shape = _merge_optional_base_with_rebuild(source_cut.Shape, base_component.Shape)
+        merged_result.Label = settings.operation.result_label
+        container.addObject(merged_result)
+        doc.recompute()
+        final_object = merged_result
+        deliverable_objects = (merged_result,)
 
     if not settings.operation.keep_intermediates_visible and Gui is not None:
         hidden_objects = [
             source_copy,
             fill_feature,
-            source_cut,
             preprocessed_feature,
             channel_feature,
             rebuild_feature,
-            repaired_feature,
             hole_feature,
-            cut,
         ]
+        if output_mode == OUTPUT_MODE_MERGE:
+            hidden_objects.append(source_cut)
+            hidden_objects.append(base_cut)
+            if base_component is not base_cut:
+                hidden_objects.append(base_component)
+        elif base_component is not base_cut:
+            hidden_objects.append(base_cut)
         if channel_cells_feature is not None:
             hidden_objects.append(channel_cells_feature)
         for obj in hidden_objects:
@@ -186,9 +215,22 @@ def execute(doc, source_object, settings: Settings) -> OperationResult:
         if hasattr(source_object, "ViewObject"):
             source_object.ViewObject.Visibility = False
 
+    if output_mode == OUTPUT_MODE_ASSEMBLE and Gui is not None:
+        for deliverable in deliverable_objects:
+            if hasattr(deliverable, "ViewObject"):
+                deliverable.ViewObject.Visibility = True
     if hasattr(final_object, "ViewObject") and Gui is not None:
         final_object.ViewObject.Visibility = True
-    return OperationResult(container=container, final_object=final_object, detections=detections)
+    return OperationResult(
+        container=container,
+        final_object=final_object,
+        detections=detections,
+        mode=output_mode,
+        upper_component=source_cut,
+        base_component=base_component,
+        deliverable_objects=deliverable_objects,
+        validation_objects=deliverable_objects,
+    )
 
 
 def summarize_detections(detections) -> str:
@@ -577,6 +619,16 @@ def _merge_optional_base_with_rebuild(base_shape, rebuild_shape):
     except Exception:
         pass
     return merged
+
+
+def _refine_optional_shape(shape):
+    if _shape_is_empty(shape):
+        return shape
+    try:
+        refined = shape.removeSplitter()
+    except Exception:
+        return shape
+    return refined if not _shape_is_empty(refined) else shape
 
 
 def _shape_is_empty(shape) -> bool:

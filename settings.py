@@ -33,6 +33,8 @@ BASE_PROFILE_BOTTOM_RADIUS = 0.8
 BASE_PROFILE_WALL_RADIUS = 1.6
 BASE_PROFILE_TOP_RADIUS = 4.0
 PARAM_ROOT = "User parameter:BaseApp/Preferences/Mod/GridfinityMagnetFix"
+OUTPUT_MODE_MERGE = "merge"
+OUTPUT_MODE_ASSEMBLE = "assemble"
 
 
 @dataclass(slots=True)
@@ -46,6 +48,7 @@ class DetectionSettings:
 
 @dataclass(slots=True)
 class OperationSettings:
+    output_mode: str = OUTPUT_MODE_MERGE
     hole_diameter: float = 6.15
     hole_depth: float = 2.2
     hole_pitch: float = MAGNET_HOLE_PITCH
@@ -89,6 +92,7 @@ def load_default_settings() -> Settings:
         ),
     )
     operation = OperationSettings(
+        output_mode=params.GetString("output_mode", defaults.operation.output_mode),
         hole_diameter=params.GetFloat("hole_diameter", defaults.operation.hole_diameter),
         hole_depth=params.GetFloat("hole_depth", defaults.operation.hole_depth),
         hole_pitch=params.GetFloat("hole_pitch", defaults.operation.hole_pitch),
@@ -117,6 +121,7 @@ def save_default_settings(settings: Settings):
     params.SetFloat("axis_angle_tolerance_deg", settings.detection.axis_angle_tolerance_deg)
     params.SetFloat("axis_length_ratio_min", settings.detection.axis_length_ratio_min)
     params.SetBool("allow_mixed_profiles", settings.detection.allow_mixed_profiles)
+    params.SetString("output_mode", settings.operation.output_mode)
     params.SetFloat("hole_diameter", settings.operation.hole_diameter)
     params.SetFloat("hole_depth", settings.operation.hole_depth)
     params.SetFloat("hole_pitch", settings.operation.hole_pitch)
