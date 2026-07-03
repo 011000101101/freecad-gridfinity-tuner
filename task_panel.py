@@ -77,6 +77,8 @@ class GridfinityMagnetFixTaskPanel:
             subdividers_enabled=self.subdividers_enabled.isChecked(),
             chamfer_enabled=self.chamfer_enabled.isChecked(),
             chamfer_size=self.chamfer_size.value(),
+            rim_segmentation_enabled=self.rim_segmentation_enabled.isChecked(),
+            rim_tolerance=self.rim_tolerance.value(),
             keep_intermediates_visible=self.keep_intermediates.isChecked(),
         )
         return Settings(detection=detection, operation=operation)
@@ -185,7 +187,8 @@ class GridfinityMagnetFixTaskPanel:
         self.solid_description = QtGui.QLabel(
             "Detect bottom landings on the selected solid's lowest Z plane, "
             "rebuild the lower 5 mm from nominal Gridfinity cell geometry, "
-            "optionally add subdividers, and cut OG-style magnet holes."
+            "optionally add subdividers, cut OG-style magnet holes, and in assemble mode "
+            "optionally separate a detected top rim."
         )
         self.solid_description.setWordWrap(True)
         group_layout.addWidget(self.solid_description)
@@ -201,6 +204,7 @@ class GridfinityMagnetFixTaskPanel:
         self.hole_depth = self._double_spin(0.1, 20.0, 2.2, 2)
         self.hole_pitch = self._double_spin(1.0, 50.0, 26.0, 2)
         self.chamfer_size = self._double_spin(0.0, 5.0, 0.5, 2)
+        self.rim_tolerance = self._double_spin(0.0, 2.0, 0.1, 2)
 
         self.allow_mixed_profiles = QtGui.QCheckBox()
         self.preview_enabled = QtGui.QCheckBox()
@@ -208,6 +212,8 @@ class GridfinityMagnetFixTaskPanel:
         self.subdividers_enabled = QtGui.QCheckBox()
         self.chamfer_enabled = QtGui.QCheckBox()
         self.chamfer_enabled.setChecked(True)
+        self.rim_segmentation_enabled = QtGui.QCheckBox()
+        self.rim_segmentation_enabled.setChecked(True)
         self.keep_intermediates = QtGui.QCheckBox()
         self.output_mode = QtGui.QComboBox()
         self.output_mode.addItem("Repair and Merge", OUTPUT_MODE_MERGE)
@@ -225,6 +231,8 @@ class GridfinityMagnetFixTaskPanel:
         form.addRow("Add subdividers", self.subdividers_enabled)
         form.addRow("Chamfer underside rim", self.chamfer_enabled)
         form.addRow("Chamfer size (mm)", self.chamfer_size)
+        form.addRow("Segment detected rim", self.rim_segmentation_enabled)
+        form.addRow("Rim tolerance (mm)", self.rim_tolerance)
         form.addRow("Preview detections", self.preview_enabled)
         form.addRow("Keep intermediates visible", self.keep_intermediates)
 
@@ -280,6 +288,7 @@ class GridfinityMagnetFixTaskPanel:
             self.hole_depth,
             self.hole_pitch,
             self.chamfer_size,
+            self.rim_tolerance,
         )
         for widget in widgets:
             widget.valueChanged.connect(self.refresh_preview)
@@ -288,6 +297,7 @@ class GridfinityMagnetFixTaskPanel:
         self.preview_enabled.toggled.connect(self.refresh_preview)
         self.subdividers_enabled.toggled.connect(self.refresh_preview)
         self.chamfer_enabled.toggled.connect(self.refresh_preview)
+        self.rim_segmentation_enabled.toggled.connect(self.refresh_preview)
         self.output_mode.currentIndexChanged.connect(self.refresh_preview)
 
     def _apply_settings(self, settings: Settings):
@@ -303,8 +313,11 @@ class GridfinityMagnetFixTaskPanel:
         self.subdividers_enabled.setChecked(settings.operation.subdividers_enabled)
         self.chamfer_enabled.setChecked(settings.operation.chamfer_enabled)
         self.chamfer_size.setValue(settings.operation.chamfer_size)
+        self.rim_segmentation_enabled.setChecked(settings.operation.rim_segmentation_enabled)
+        self.rim_tolerance.setValue(settings.operation.rim_tolerance)
         self.keep_intermediates.setChecked(settings.operation.keep_intermediates_visible)
         self._update_export_buttons()
+        self._update_mode_specific_controls()
 
     def _update_defaults(self):
         save_default_settings(self.gather_settings())
@@ -453,13 +466,10 @@ class GridfinityMagnetFixTaskPanel:
 
     def _result_summary(self, result):
         if result.mode == OUTPUT_MODE_ASSEMBLE:
-            lines = [
-                "Created assembly result with two deliverable parts:",
-                f"- {result.upper_component.Label}",
-                f"- {result.base_component.Label}",
-                "",
-                "Use Export 3MF to write the two-part assembly for slicers.",
-            ]
+            lines = ["Created assembly result with deliverable parts:"]
+            for document_object in result.deliverable_objects:
+                lines.append(f"- {document_object.Label}")
+            lines.extend(["", "Use Export 3MF to write the repaired assembly for slicers."])
             return "\n".join(lines)
         return (
             f"Created merged result: {result.final_object.Label}\n\n"
@@ -483,6 +493,12 @@ class GridfinityMagnetFixTaskPanel:
         self.export_3mf_button.setVisible(mode == OUTPUT_MODE_ASSEMBLE)
         self.export_stl_button.setEnabled(can_export and mode == OUTPUT_MODE_MERGE)
         self.export_3mf_button.setEnabled(can_export and mode == OUTPUT_MODE_ASSEMBLE)
+        self._update_mode_specific_controls()
+
+    def _update_mode_specific_controls(self):
+        is_assemble = self.output_mode.currentData() == OUTPUT_MODE_ASSEMBLE
+        self.rim_segmentation_enabled.setEnabled(is_assemble)
+        self.rim_tolerance.setEnabled(is_assemble and self.rim_segmentation_enabled.isChecked())
 
     def _export_merge_result(self):
         self._export_with_dialog(".stl", "STL Mesh (*.stl)")

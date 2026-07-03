@@ -24,6 +24,7 @@ from .settings import (
     OUTPUT_MODE_MERGE,
     Settings,
 )
+from .segmentation import split_body_and_optional_rim
 
 try:
     import FreeCAD as App
@@ -66,6 +67,8 @@ class OperationResult:
     mode: str
     upper_component: object | None = None
     base_component: object | None = None
+    rim_component: object | None = None
+    segmented_components: tuple[object, ...] = ()
     deliverable_objects: tuple[object, ...] = ()
     validation_objects: tuple[object, ...] = ()
 
@@ -178,9 +181,22 @@ def execute(doc, source_object, settings: Settings) -> OperationResult:
 
     doc.recompute()
 
+    rim_enabled = output_mode == OUTPUT_MODE_ASSEMBLE and settings.operation.rim_segmentation_enabled
+    body_split = split_body_and_optional_rim(source_cut.Shape, detections, settings, rim_enabled)
+    source_cut.Shape = body_split.body_shape
+    rim_component = None
+    if output_mode == OUTPUT_MODE_ASSEMBLE:
+        for component in body_split.components:
+            segment_feature = doc.addObject("Part::Feature", _unique_name(doc, "GFRim"))
+            segment_feature.Shape = component.shape
+            segment_feature.Label = component.label
+            assembly_container.addObject(segment_feature)
+            rim_component = segment_feature
+        doc.recompute()
+
     if output_mode == OUTPUT_MODE_ASSEMBLE:
         final_object = assembly_container
-        deliverable_objects = (source_cut, base_component)
+        deliverable_objects = (source_cut,) + ((rim_component,) if rim_component is not None else ()) + (base_component,)
     else:
         merged_result = doc.addObject("Part::Feature", _unique_name(doc, "GFMergedResult"))
         merged_result.Shape = _merge_optional_base_with_rebuild(source_cut.Shape, base_component.Shape)
@@ -228,6 +244,8 @@ def execute(doc, source_object, settings: Settings) -> OperationResult:
         mode=output_mode,
         upper_component=source_cut,
         base_component=base_component,
+        rim_component=rim_component,
+        segmented_components=((rim_component,) if rim_component is not None else ()),
         deliverable_objects=deliverable_objects,
         validation_objects=deliverable_objects,
     )

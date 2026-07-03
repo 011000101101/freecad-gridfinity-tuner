@@ -35,6 +35,8 @@ BASE_PROFILE_TOP_RADIUS = 4.0
 PARAM_ROOT = "User parameter:BaseApp/Preferences/Mod/GridfinityMagnetFix"
 OUTPUT_MODE_MERGE = "merge"
 OUTPUT_MODE_ASSEMBLE = "assemble"
+RIM_INNER_PAD = 2.95
+RIM_TARGET_HEIGHT = 4.4
 
 
 @dataclass(slots=True)
@@ -55,6 +57,8 @@ class OperationSettings:
     subdividers_enabled: bool = False
     chamfer_enabled: bool = True
     chamfer_size: float = 0.5
+    rim_segmentation_enabled: bool = True
+    rim_tolerance: float = 0.1
     result_label: str = "Gridfinity Magnet Fix"
     keep_intermediates_visible: bool = False
 
@@ -102,6 +106,11 @@ def load_default_settings() -> Settings:
         ),
         chamfer_enabled=params.GetBool("chamfer_enabled", defaults.operation.chamfer_enabled),
         chamfer_size=params.GetFloat("chamfer_size", defaults.operation.chamfer_size),
+        rim_segmentation_enabled=params.GetBool(
+            "rim_segmentation_enabled",
+            defaults.operation.rim_segmentation_enabled,
+        ),
+        rim_tolerance=params.GetFloat("rim_tolerance", defaults.operation.rim_tolerance),
         result_label=params.GetString("result_label", defaults.operation.result_label),
         keep_intermediates_visible=params.GetBool(
             "keep_intermediates_visible",
@@ -128,6 +137,8 @@ def save_default_settings(settings: Settings):
     params.SetBool("subdividers_enabled", settings.operation.subdividers_enabled)
     params.SetBool("chamfer_enabled", settings.operation.chamfer_enabled)
     params.SetFloat("chamfer_size", settings.operation.chamfer_size)
+    params.SetBool("rim_segmentation_enabled", settings.operation.rim_segmentation_enabled)
+    params.SetFloat("rim_tolerance", settings.operation.rim_tolerance)
     params.SetString("result_label", settings.operation.result_label)
     params.SetBool("keep_intermediates_visible", settings.operation.keep_intermediates_visible)
 

@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import uuid
 
 try:
     import FreeCAD as App
     import Mesh
     import MeshPart
+    import Part
 except ImportError:  # pragma: no cover - only available inside FreeCAD
     App = None
     Mesh = None
     MeshPart = None
+    Part = None
 
 from .settings import OUTPUT_MODE_ASSEMBLE, OUTPUT_MODE_MERGE
 
@@ -45,6 +48,13 @@ def export_result(result, filename: str):
         raise ExportError("No deliverable objects are available for export.")
 
     temp_doc_name = f"GFExport{uuid.uuid4().hex[:8]}"
+    if export_mode == OUTPUT_MODE_ASSEMBLE and _can_native_export(deliverables):
+        try:
+            Mesh.export(deliverables, filename)
+            return
+        except Exception as exc:
+            raise ExportError(f"Failed to export result to {filename}.") from exc
+
     temp_doc = App.newDocument(temp_doc_name)
     try:
         mesh_objects = []
@@ -78,17 +88,32 @@ def build_export_mesh(document_object, export_mode: str = OUTPUT_MODE_ASSEMBLE):
     shape = getattr(document_object, "Shape", None)
     if shape is None or shape.isNull():
         raise ExportError(f"Object {getattr(document_object, 'Label', '<unnamed>')} has no valid shape.")
+    shape = _refine_export_shape(shape)
     if export_mode == OUTPUT_MODE_MERGE:
         return _mesh_shape_per_solid(shape)
+    label = getattr(document_object, "Label", "<unnamed>")
     mesh = Mesh.Mesh()
-    solids = getattr(shape, "Solids", None) or ()
+    solids = _exportable_solids(shape)
     if solids:
         for solid in solids:
             mesh.addMesh(_mesh_from_single_shape(solid))
     else:
         mesh.addMesh(_mesh_from_single_shape(shape))
-    _validate_export_mesh(mesh, getattr(document_object, "Label", "<unnamed>"))
-    return mesh
+    try:
+        _validate_export_mesh(mesh, label)
+        return mesh
+    except ExportError:
+        rebuilt_shape = _rebuild_shape_from_faces(shape)
+        if rebuilt_shape is not None:
+            rebuilt_mesh = _mesh_shape_per_solid(rebuilt_shape)
+            try:
+                _validate_export_mesh(rebuilt_mesh, label)
+                return rebuilt_mesh
+            except ExportError:
+                pass
+        native_mesh = _mesh_via_native_export(document_object)
+        _validate_export_mesh(native_mesh, label)
+        return native_mesh
 
 
 def build_result_export_mesh(result):
@@ -132,7 +157,7 @@ def _mesh_from_single_shape(shape):
 
 def _mesh_shape_per_solid(shape):
     mesh = Mesh.Mesh()
-    solids = getattr(shape, "Solids", None) or ()
+    solids = _exportable_solids(shape)
     if solids:
         for solid in solids:
             mesh.addMesh(_mesh_from_single_shape(solid))
@@ -154,6 +179,72 @@ def _refine_export_shape(shape):
     return refined
 
 
+def _exportable_solids(shape):
+    solids = list(getattr(shape, "Solids", None) or ())
+    if not solids:
+        return ()
+    exportable = []
+    for solid in solids:
+        exportable.append(_repair_export_solid(solid))
+    return tuple(exportable)
+
+
+def _repair_export_solid(solid):
+    candidates = [solid]
+    for builder in (
+        lambda current: current.removeSplitter(),
+        _rebuild_solid_from_faces,
+    ):
+        try:
+            candidate = builder(solid)
+        except Exception:
+            continue
+        if candidate is None:
+            continue
+        candidates.append(candidate)
+
+    best_candidate = solid
+    for candidate in candidates:
+        try:
+            mesh = _mesh_from_single_shape(candidate)
+        except Exception:
+            continue
+        if mesh.isSolid() and not mesh.hasNonManifolds():
+            return candidate
+        best_candidate = candidate
+    return best_candidate
+
+
+def _rebuild_solid_from_faces(solid):
+    if Part is None:
+        return solid
+    shell = Part.Shell(list(getattr(solid, "Faces", ()) or ()))
+    rebuilt = Part.Solid(shell)
+    try:
+        rebuilt = rebuilt.removeSplitter()
+    except Exception:
+        pass
+    return rebuilt
+
+
+def _rebuild_shape_from_faces(shape):
+    if Part is None:
+        return None
+    faces = list(getattr(shape, "Faces", ()) or ())
+    if not faces:
+        return None
+    try:
+        shell = Part.Shell(faces)
+        rebuilt = Part.Solid(shell)
+    except Exception:
+        return None
+    try:
+        rebuilt = rebuilt.removeSplitter()
+    except Exception:
+        pass
+    return rebuilt
+
+
 def _validate_export_mesh(mesh, label: str):
     if mesh.hasNonManifolds():
         raise ExportError(f"Export mesh for {label} contains non-manifold edges.")
@@ -164,3 +255,45 @@ def _validate_export_mesh(mesh, label: str):
 def _export_label(document_object, index: int) -> str:
     label = getattr(document_object, "Label", "") or f"Component {index}"
     return label.replace(" ", "_")
+
+
+def _can_native_export(document_objects) -> bool:
+    if not document_objects:
+        return False
+    for document_object in document_objects:
+        if getattr(document_object, "Document", None) is None:
+            return False
+        if getattr(document_object, "Name", None) is None:
+            return False
+        if getattr(document_object, "Shape", None) is None:
+            return False
+    return True
+
+
+def _mesh_via_native_export(document_object):
+    if App is None or Mesh is None:
+        raise ExportError("Native mesh export is not available in this environment.")
+    temp_doc_name = f"GFNativeMesh{uuid.uuid4().hex[:8]}"
+    temp_doc = App.newDocument(temp_doc_name)
+    fd, path = tempfile.mkstemp(suffix=".stl", prefix="gf_native_mesh_")
+    os.close(fd)
+    try:
+        part_feature = temp_doc.addObject("Part::Feature", "ExportShape")
+        part_feature.Label = _export_label(document_object, 1)
+        part_feature.Shape = getattr(document_object, "Shape")
+        temp_doc.recompute()
+        Mesh.export([part_feature], path)
+        return Mesh.Mesh(path)
+    except Exception as exc:
+        raise ExportError(
+            f"Native mesh export fallback failed for {getattr(document_object, 'Label', '<unnamed>')}."
+        ) from exc
+    finally:
+        try:
+            App.closeDocument(temp_doc.Name)
+        except Exception:
+            pass
+        try:
+            os.remove(path)
+        except Exception:
+            pass
