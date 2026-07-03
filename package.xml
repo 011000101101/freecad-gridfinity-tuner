@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package format="1">
+  <name>Gridfinity Magnet Fix</name>
+  <description>
+    FreeCAD workbench for detecting Gridfinity-compatible bottom landings,
+    filling legacy bottom features, and cutting OG-style magnet holes.
+  </description>
+  <version>0.1.0</version>
+  <date>2026-04-21</date>
+  <maintainer email="noreply@example.invalid">Codex</maintainer>
+  <license file="LICENSE">MIT</license>
+  <url type="repository">https://example.invalid/gridfinity-magnet-fix</url>
+  <content>
+    <workbench>InitGui.py</workbench>
+  </content>
+</package>

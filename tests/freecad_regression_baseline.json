@@ -1,0 +1,296 @@
+{
+  "bruch_assemble": {
+    "base_hole_face_count": 40,
+    "base_lower_band_volume": 35106.144497874826,
+    "base_valid": true,
+    "deliverable_count": 2,
+    "deliverable_meshes": [
+      {
+        "components": 1,
+        "facets": 3658,
+        "has_non_manifolds": false,
+        "is_solid": true,
+        "label": "Prepared Upper Body"
+      },
+      {
+        "components": 5,
+        "facets": 4736,
+        "has_non_manifolds": false,
+        "is_solid": true,
+        "label": "Repaired Base Component"
+      }
+    ],
+    "detections": 5,
+    "expected_hole_count": 20,
+    "export_exists": true,
+    "export_mesh": {
+      "components": 6,
+      "facets": 8394,
+      "has_non_manifolds": false,
+      "is_solid": true
+    },
+    "export_size": 84583,
+    "final_lower_band_volume": 0.0,
+    "final_valid": true,
+    "output_mode": "assemble",
+    "prepared_upper_band_volume": 112147.2180512371,
+    "source_valid": true,
+    "timings": {
+      "apply_base_chamfer": 0.18772109800192993,
+      "build_base_component": 0.16562556399730965,
+      "build_fill_pads": 0.04789962200447917,
+      "build_hole_cutters": 0.003848007007036358,
+      "build_preprocessed_lower": 0.20761539200611878,
+      "build_profile_cutters": 2.7732252959976904,
+      "cut_source_lower": 2.2481564699992305,
+      "detect_footprints": 0.39961674298683647,
+      "export_result": 0.43571659199369606,
+      "mesh_load": 0.004920241990475915,
+      "mesh_to_solid": 6.413708629988832,
+      "rebuild_lower_section": 3.312777814004221
+    },
+    "upper_valid": true
+  },
+  "bruch_merge": {
+    "base_hole_face_count": 40,
+    "base_lower_band_volume": 35106.144497874826,
+    "base_valid": true,
+    "deliverable_count": 1,
+    "deliverable_meshes": [
+      {
+        "components": 1,
+        "facets": 8566,
+        "has_non_manifolds": false,
+        "is_solid": true,
+        "label": "Merged Result"
+      }
+    ],
+    "detections": 5,
+    "expected_hole_count": 20,
+    "export_exists": true,
+    "export_mesh": {
+      "components": 1,
+      "facets": 8566,
+      "has_non_manifolds": false,
+      "is_solid": true
+    },
+    "export_size": 428384,
+    "final_lower_band_volume": 35106.14449806974,
+    "final_valid": true,
+    "output_mode": "merge",
+    "prepared_upper_band_volume": 112147.21805301194,
+    "source_valid": true,
+    "timings": {
+      "apply_base_chamfer": 0.2011848599941004,
+      "build_base_component": 0.16085898400342558,
+      "build_fill_pads": 0.048247459999402054,
+      "build_hole_cutters": 0.0034957710013259202,
+      "build_preprocessed_lower": 0.2110043469874654,
+      "build_profile_cutters": 2.836562034994131,
+      "cut_source_lower": 0.8807394949981244,
+      "detect_footprints": 0.35102398799790535,
+      "export_result": 3.623036551012774,
+      "merge_repaired_base": 2.3430778609908884,
+      "mesh_load": 0.005965880991425365,
+      "mesh_to_solid": 6.35614485599217,
+      "rebuild_lower_section": 3.342207392997807
+    },
+    "upper_valid": true
+  },
+  "medium_assemble": {
+    "base_hole_face_count": 16,
+    "base_lower_band_volume": 14043.348626376443,
+    "base_valid": true,
+    "deliverable_count": 2,
+    "deliverable_meshes": [
+      {
+        "components": 1,
+        "facets": 1636,
+        "has_non_manifolds": false,
+        "is_solid": true,
+        "label": "Prepared Upper Body"
+      },
+      {
+        "components": 2,
+        "facets": 1816,
+        "has_non_manifolds": false,
+        "is_solid": true,
+        "label": "Repaired Base Component"
+      }
+    ],
+    "detections": 2,
+    "expected_hole_count": 8,
+    "export_exists": true,
+    "export_mesh": {
+      "components": 3,
+      "facets": 3452,
+      "has_non_manifolds": false,
+      "is_solid": true
+    },
+    "export_size": 35412,
+    "final_lower_band_volume": 0.0,
+    "final_valid": true,
+    "output_mode": "assemble",
+    "prepared_upper_band_volume": 14982.32792592345,
+    "source_valid": true,
+    "timings": {
+      "apply_base_chamfer": 0.031729292997624725,
+      "build_base_component": 0.044516576002934016,
+      "build_fill_pads": 0.019070798996835947,
+      "build_hole_cutters": 0.0029800010088365525,
+      "build_preprocessed_lower": 0.022357334004482254,
+      "build_profile_cutters": 0.9282370820001233,
+      "cut_source_lower": 0.69741948301089,
+      "detect_footprints": 0.12225450699042995,
+      "export_result": 0.16257465499802493,
+      "mesh_load": 0.0047177240048768,
+      "mesh_to_solid": 1.5482541160017718,
+      "rebuild_lower_section": 1.013388360006502
+    },
+    "upper_valid": true
+  },
+  "medium_merge": {
+    "base_hole_face_count": 16,
+    "base_lower_band_volume": 14043.348626376443,
+    "base_valid": true,
+    "deliverable_count": 1,
+    "deliverable_meshes": [
+      {
+        "components": 1,
+        "facets": 3480,
+        "has_non_manifolds": false,
+        "is_solid": true,
+        "label": "Merged Result"
+      }
+    ],
+    "detections": 2,
+    "expected_hole_count": 8,
+    "export_exists": true,
+    "export_mesh": {
+      "components": 1,
+      "facets": 3480,
+      "has_non_manifolds": false,
+      "is_solid": true
+    },
+    "export_size": 174084,
+    "final_lower_band_volume": 14043.34863259403,
+    "final_valid": true,
+    "output_mode": "merge",
+    "prepared_upper_band_volume": 14982.327907416522,
+    "source_valid": true,
+    "timings": {
+      "apply_base_chamfer": 0.02998992000357248,
+      "build_base_component": 0.03719570800603833,
+      "build_fill_pads": 0.03030306000437122,
+      "build_hole_cutters": 0.0015382479905383661,
+      "build_preprocessed_lower": 0.022306404003757052,
+      "build_profile_cutters": 0.9345551279984647,
+      "cut_source_lower": 0.28875577700091526,
+      "detect_footprints": 0.16825057100504637,
+      "export_result": 0.9321969610027736,
+      "merge_repaired_base": 0.7764463009953033,
+      "mesh_load": 0.0036998029972892255,
+      "mesh_to_solid": 1.4809589139913442,
+      "rebuild_lower_section": 1.0336812710011145
+    },
+    "upper_valid": true
+  },
+  "small_assemble": {
+    "base_hole_face_count": 16,
+    "base_lower_band_volume": 14043.3486535219,
+    "base_valid": true,
+    "deliverable_count": 2,
+    "deliverable_meshes": [
+      {
+        "components": 1,
+        "facets": 1790,
+        "has_non_manifolds": false,
+        "is_solid": true,
+        "label": "Prepared Upper Body"
+      },
+      {
+        "components": 2,
+        "facets": 1816,
+        "has_non_manifolds": false,
+        "is_solid": true,
+        "label": "Repaired Base Component"
+      }
+    ],
+    "detections": 2,
+    "expected_hole_count": 8,
+    "export_exists": true,
+    "export_mesh": {
+      "components": 3,
+      "facets": 3606,
+      "has_non_manifolds": false,
+      "is_solid": true
+    },
+    "export_size": 36048,
+    "final_lower_band_volume": 0.0,
+    "final_valid": true,
+    "output_mode": "assemble",
+    "prepared_upper_band_volume": 18019.334469147485,
+    "source_valid": true,
+    "timings": {
+      "apply_base_chamfer": 0.03669990699563641,
+      "build_base_component": 0.044696292010485195,
+      "build_fill_pads": 0.02581723600451369,
+      "build_hole_cutters": 0.0021768660080851987,
+      "build_preprocessed_lower": 0.03116846199554857,
+      "build_profile_cutters": 0.9482884030003333,
+      "cut_source_lower": 0.8012884139898233,
+      "detect_footprints": 0.18550736099132337,
+      "export_result": 0.2436197499919217,
+      "mesh_load": 0.008150128996931016,
+      "mesh_to_solid": 1.8671831550018396,
+      "rebuild_lower_section": 1.0210123530123383
+    },
+    "upper_valid": true
+  },
+  "small_merge": {
+    "base_hole_face_count": 16,
+    "base_lower_band_volume": 14043.3486535219,
+    "base_valid": true,
+    "deliverable_count": 1,
+    "deliverable_meshes": [
+      {
+        "components": 1,
+        "facets": 3654,
+        "has_non_manifolds": false,
+        "is_solid": true,
+        "label": "Merged Result"
+      }
+    ],
+    "detections": 2,
+    "expected_hole_count": 8,
+    "export_exists": true,
+    "export_mesh": {
+      "components": 2,
+      "facets": 3638,
+      "has_non_manifolds": false,
+      "is_solid": true
+    },
+    "export_size": 181984,
+    "final_lower_band_volume": 14043.348653525785,
+    "final_valid": true,
+    "output_mode": "merge",
+    "prepared_upper_band_volume": 18019.33448356218,
+    "source_valid": true,
+    "timings": {
+      "apply_base_chamfer": 0.038062300998717546,
+      "build_base_component": 0.05256930999166798,
+      "build_fill_pads": 0.022057601003325544,
+      "build_hole_cutters": 0.0019377470016479492,
+      "build_preprocessed_lower": 0.03341970100882463,
+      "build_profile_cutters": 1.0377312549971975,
+      "cut_source_lower": 0.4573359300120501,
+      "detect_footprints": 0.13990739500150084,
+      "export_result": 1.180342602005112,
+      "merge_repaired_base": 0.7900024809932802,
+      "mesh_load": 0.00438764899445232,
+      "mesh_to_solid": 1.9241233289940283,
+      "rebuild_lower_section": 1.0273033929988742
+    },
+    "upper_valid": true
+  }
+}
